@@ -1,11 +1,11 @@
 # bork
 
-## discord app to help with Shadow of War Mobile game
+Discord bot app for Shadow of War Mobile game
 
-## forked from mgerb/discord-bot-tutorial
+*forked from mgerb/discord-bot-tutorial*
 Thanks for the tutorial!
 
-## Functions
+## Functionality
 * Timer for arena energy
 * Timer for campaign energy
 * Orc evaluator

@@ -1,9 +1,11 @@
 package bot
 
 import (
-	"../config"
 	"fmt"
+	"strings"
+
 	"github.com/bwmarrin/discordgo"
+	"github.com/westphae/bork/config"
 )
 
 var BotID string
@@ -39,11 +41,13 @@ func Start() {
 
 func messageHandler(s *discordgo.Session, m *discordgo.MessageCreate) {
 
-	if m.Author.ID == BotID {
-		return
-	}
+	if strings.HasPrefix(m.Content, config.BotPrefix) {
+		if m.Author.ID == BotID {
+			return
+		}
 
-	if m.Content == "ping" {
-		_, _ = s.ChannelMessageSend(m.ChannelID, "pong")
+		if m.Content == "!ping" {
+			_, _ = s.ChannelMessageSend(m.ChannelID, "pong")
+		}
 	}
 }

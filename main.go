@@ -1,9 +1,10 @@
 package main
 
 import (
-	"./bot"
-	"./config"
 	"fmt"
+
+	"github.com/westphae/bork/bot"
+	"github.com/westphae/bork/config"
 )
 
 func main() {
