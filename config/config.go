@@ -20,10 +20,10 @@ type configStruct struct {
 	BotPrefix string `json:"BotPrefix"`
 }
 
-func ReadConfig() error {
-	fmt.Println("Reading config file...")
+func ReadConfig(fn string) error {
+	fmt.Sprintf("Reading config file %s\n", fn)
 
-	file, err := ioutil.ReadFile("./config.json")
+	file, err := ioutil.ReadFile(fn)
 
 	if err != nil {
 		fmt.Println(err.Error())

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 
 	"github.com/westphae/bork/bot"
@@ -8,7 +9,9 @@ import (
 )
 
 func main() {
-	err := config.ReadConfig()
+	var configFile = flag.String("config", "./config.json", "config.json file to use")
+	flag.Parse()
+	err := config.ReadConfig(*configFile)
 
 	if err != nil {
 		fmt.Println(err.Error())
