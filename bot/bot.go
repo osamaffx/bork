@@ -11,14 +11,25 @@ import (
 )
 
 const (
-	energyRate = 4*60 // Energy refreshes one point per 4 minutes = 240 seconds
+	maxMembers = 30 // Maximum number of members in a fellowship
 	arenaEnergyRate = 144 // Arena energy refreshes one point per 2.4 minutes = 144 seconds
+	energyRate = 4*60 // Energy refreshes one point per 4 minutes = 240 seconds
 	palantirRate = 4*60*60 // Palantir refreshes once per 4 hours
 )
 
-var BotID string
+type scheduleItem struct {
+	expireAt time.Time
+	channel  chan struct{}
+}
+
+var (
+	BotID        string
+	borkSchedule map[discordgo.User]scheduleItem
+)
 
 func Start() {
+	borkSchedule = make(map[discordgo.User]scheduleItem)
+
 	goBot, err := discordgo.New("Bot " + config.Token)
 
 	if err != nil {
@@ -43,28 +54,31 @@ func Start() {
 		return
 	}
 
-	fmt.Println("Bot is running!")
+	fmt.Println("Bork is running!")
 }
 
 func messageHandler(s *discordgo.Session, m *discordgo.MessageCreate) {
 
 	var (
+		c           chan struct{}
+		d           time.Duration
 		e           int
 		err         error
 		ackMessage  string
 		doneMessage string
 	)
 
-	fmt.Println(m.ContentWithMentionsReplaced())
+	fmt.Sprintf(">> %s\n", m.ContentWithMentionsReplaced())
 
-	if m.Author.ID == BotID || !strings.HasPrefix(m.Content, config.BotPrefix) {
+	if m.Author.ID == BotID || (config.BotChannel != "" && m.ChannelID != config.BotChannel) ||
+		!strings.HasPrefix(m.Content, config.BotPrefix) {
 		return
 	}
 
 	f := strings.Split(m.Content[1:len(m.Content)], " ")
 
-	if f[0] == "arena" {
-		bye := func() {
+	if strings.HasPrefix("arena", f[0]) {
+		help := func() {
 			s.ChannelMessageSend(m.ChannelID,
 				fmt.Sprintf("%s, next time I'm gonna slice you up and feed you to the orclings " +
 					"if you can't figure this out!\nJust tell me your current energy and I'll do the rest, " +
@@ -73,40 +87,62 @@ func messageHandler(s *discordgo.Session, m *discordgo.MessageCreate) {
 		}
 
 		if len(f) != 2 {
-			bye()
+			help()
 			return
+		}
+
+		// If there's already a reminder, cancel it first.
+		if i, ok := borkSchedule[*m.Author]; ok {
+			close(i.channel)
+			delete(borkSchedule, *m.Author)
 		}
 
 		e, err = strconv.Atoi(f[1])
 		if err != nil {
-			bye()
+			help()
 			return
 		}
 
-		e = int((299.5-float32(e)) * arenaEnergyRate)
+		e = (300-e) * arenaEnergyRate - 30
 		hour := int(e/3600)
 		minute := int((e - 3600*hour)/60)
 		second := int(e - 3600*hour - 60*minute)
+		d = time.Duration(e) * time.Second
 		ackMessage = fmt.Sprintf("Alright, %s, I'll rattle your cage in %d:%02d:%02d.  " +
 				"Maybe I'll even let you out of it.", m.Author.Mention(), hour, minute, second)
 		doneMessage = fmt.Sprintf(
-			"Hey, you, %s, WAKE UP!  It's time to hit the arena, you lout.", m.Author.Mention())
+			"Hey, you, %s!  It's about time to hit the arena, you lout.", m.Author.Mention())
 
-		go messageTimer(s, m, e, ackMessage, doneMessage)
-
+		c = messageTimer(s, m, d, ackMessage, doneMessage)
+		borkSchedule[*m.Author] = scheduleItem{
+			time.Now().Add(d),
+			c}
+		fmt.Println(borkSchedule)
 	}
 }
 
-//TODO: return a channel for resetting time
-//TODO: restrict to specific bot channel
-//TODO: timers for palantir, campaign energy, ability refresh, hourly warlord, daily warlord
+//TODO: timers for Palantir, campaign energy, ability refresh, hourly warlord, daily warlord
 //TODO: keep a struct of user data
 //TODO: say the local time too (or UTC if user doesn't give tz info)
 //TODO: vary the messages sent
 //TODO: orc adviser
 //TODO: inscription adviser (who needs which)
-func messageTimer(s *discordgo.Session, m *discordgo.MessageCreate, e int, ackMessage string, doneMessage string) {
+func messageTimer(s *discordgo.Session, m *discordgo.MessageCreate, e time.Duration,
+	ackMessage string, doneMessage string) (c chan struct{}){
+
+	c = make(chan struct{}, 1)
+
 	s.ChannelMessageSend(m.ChannelID, ackMessage)
-	time.Sleep(time.Duration(e) * time.Second)
-	s.ChannelMessageSend(m.ChannelID, doneMessage)
+
+	go func() {
+		t := time.After(e)
+		select {
+		case <-t:
+			s.ChannelMessageSend(m.ChannelID, doneMessage)
+		case <-c:
+			fmt.Sprintf("! Canceling %s reminder", m.Author)
+		}
+	}()
+
+	return c
 }
