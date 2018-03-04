@@ -24,11 +24,11 @@ type scheduleItem struct {
 
 var (
 	BotID        string
-	borkSchedule map[discordgo.User]scheduleItem
+	borkSchedule map[string]scheduleItem
 )
 
 func Start() {
-	borkSchedule = make(map[discordgo.User]scheduleItem)
+	borkSchedule = make(map[string]scheduleItem)
 
 	goBot, err := discordgo.New("Bot " + config.Token)
 
@@ -66,6 +66,7 @@ func messageHandler(s *discordgo.Session, m *discordgo.MessageCreate) {
 		err         error
 		ackMessage  string
 		doneMessage string
+		helpMessage string
 	)
 
 	fmt.Sprintf(">> %s\n", m.ContentWithMentionsReplaced())
@@ -78,32 +79,28 @@ func messageHandler(s *discordgo.Session, m *discordgo.MessageCreate) {
 	f := strings.Split(m.Content[1:len(m.Content)], " ")
 
 	if strings.HasPrefix("arena", f[0]) {
-		help := func() {
-			s.ChannelMessageSend(m.ChannelID,
-				fmt.Sprintf("%s, next time I'm gonna slice you up and feed you to the orclings " +
+		helpMessage = fmt.Sprintf("%s, next time I'm gonna slice you up and feed you to the orclings " +
 					"if you can't figure this out!\nJust tell me your current energy and I'll do the rest, " +
-					"like this: %sarena 182.  It's simple, you dork!",
-					m.Author.Mention(), config.BotPrefix))
-		}
+					"like this: %sarena 182.  It's simple, you dork!", m.Author.Mention(), config.BotPrefix)
 
 		if len(f) != 2 {
-			help()
+			s.ChannelMessageSend(m.ChannelID, helpMessage)
 			return
 		}
 
 		// If there's already a reminder, cancel it first.
-		if i, ok := borkSchedule[*m.Author]; ok {
+		if i, ok := borkSchedule[m.Author.ID]; ok {
 			close(i.channel)
-			delete(borkSchedule, *m.Author)
+			delete(borkSchedule, m.Author.ID)
 		}
 
 		e, err = strconv.Atoi(f[1])
 		if err != nil {
-			help()
+			s.ChannelMessageSend(m.ChannelID, helpMessage)
 			return
 		}
 
-		e = (300-e) * arenaEnergyRate - 30
+		e = (300-e) * arenaEnergyRate - 60
 		hour := int(e/3600)
 		minute := int((e - 3600*hour)/60)
 		second := int(e - 3600*hour - 60*minute)
@@ -114,7 +111,7 @@ func messageHandler(s *discordgo.Session, m *discordgo.MessageCreate) {
 			"Hey, you, %s!  It's about time to hit the arena, you lout.", m.Author.Mention())
 
 		c = messageTimer(s, m, d, ackMessage, doneMessage)
-		borkSchedule[*m.Author] = scheduleItem{
+		borkSchedule[m.Author.ID] = scheduleItem{
 			time.Now().Add(d),
 			c}
 		fmt.Println(borkSchedule)
