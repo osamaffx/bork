@@ -8,6 +8,8 @@ import (
 	"github.com/westphae/bork/config"
 	"time"
 	"strconv"
+	"encoding/json"
+	"io/ioutil"
 )
 
 const (
@@ -17,6 +19,15 @@ const (
 	palantirRate = 4*60*60 // Palantir refreshes once per 4 hours
 )
 
+// userInfo contains information on the players
+// values in a map[string]userInfo where the key is the Discord ID
+type userInfo struct {
+	TimeZone   string `json:"tz"`        // Time zone for user for reporting times
+	MaxEnergy  int    `json:max_energy`  // Max energy of user (i.e. 174 for lvl 80)
+	MaxAbility int    `json:max_ability` // Max ability points of user (default 12)
+	Uses       int    `json:Uses`        // Number of times user has called Bork
+}
+
 type scheduleItem struct {
 	expireAt time.Time
 	channel  chan struct{}
@@ -25,20 +36,23 @@ type scheduleItem struct {
 var (
 	BotID        string
 	borkSchedule map[string]scheduleItem
+	users        map[string]userInfo
 )
 
 func Start() {
+	users = make(map[string]userInfo)
 	borkSchedule = make(map[string]scheduleItem)
 
-	goBot, err := discordgo.New("Bot " + config.Token)
+	loadUsers()
+	//loadSchedule()
 
+	goBot, err := discordgo.New("Bot " + config.Token)
 	if err != nil {
 		fmt.Println(err.Error())
 		return
 	}
 
 	u, err := goBot.User("@me")
-
 	if err != nil {
 		fmt.Println(err.Error())
 	}
@@ -48,7 +62,6 @@ func Start() {
 	goBot.AddHandler(messageHandler)
 
 	err = goBot.Open()
-
 	if err != nil {
 		fmt.Println(err.Error())
 		return
@@ -60,16 +73,23 @@ func Start() {
 func messageHandler(s *discordgo.Session, m *discordgo.MessageCreate) {
 
 	var (
+		profile     userInfo
 		c           chan struct{}
 		d           time.Duration
 		e           int
+		ok          bool
 		err         error
 		ackMessage  string
 		doneMessage string
 		helpMessage string
 	)
 
-	fmt.Sprintf(">> %s\n", m.ContentWithMentionsReplaced())
+	fmt.Printf(">> %s\n", m.ContentWithMentionsReplaced())
+
+	if profile, ok = users[m.Author.ID]; !ok {
+		profile = userInfo{"GMT", 144, 12, 0}
+	}
+	profile.Uses += 1
 
 	if m.Author.ID == BotID || (config.BotChannel != "" && m.ChannelID != config.BotChannel) ||
 		!strings.HasPrefix(m.Content, config.BotPrefix) {
@@ -78,24 +98,26 @@ func messageHandler(s *discordgo.Session, m *discordgo.MessageCreate) {
 
 	f := strings.Split(m.Content[1:len(m.Content)], " ")
 
-	if strings.HasPrefix("arena", f[0]) {
+	switch {
+	case strings.HasPrefix("arena", f[0]):
 		helpMessage = fmt.Sprintf("%s, next time I'm gonna slice you up and feed you to the orclings " +
-					"if you can't figure this out!\nJust tell me your current energy and I'll do the rest, " +
-					"like this: %sarena 182.  It's simple, you dork!", m.Author.Mention(), config.BotPrefix)
+			"if you can't figure this out!\nJust tell me your current energy and I'll do the rest, " +
+			"like this: %sarena 182.  It's simple, you dork!", m.Author.Mention(), config.BotPrefix)
 
-		if len(f) != 2 {
+		if len(f) != 2{
 			s.ChannelMessageSend(m.ChannelID, helpMessage)
 			return
 		}
 
 		// If there's already a reminder, cancel it first.
-		if i, ok := borkSchedule[m.Author.ID]; ok {
+		if i, ok := borkSchedule[m.Author.ID]; ok{
+			fmt.Println(borkSchedule[m.Author.ID])
 			close(i.channel)
 			delete(borkSchedule, m.Author.ID)
 		}
 
 		e, err = strconv.Atoi(f[1])
-		if err != nil {
+		if err != nil{
 			s.ChannelMessageSend(m.ChannelID, helpMessage)
 			return
 		}
@@ -106,7 +128,7 @@ func messageHandler(s *discordgo.Session, m *discordgo.MessageCreate) {
 		second := int(e - 3600*hour - 60*minute)
 		d = time.Duration(e) * time.Second
 		ackMessage = fmt.Sprintf("Alright, %s, I'll rattle your cage in %d:%02d:%02d.  " +
-				"Maybe I'll even let you out of it.", m.Author.Mention(), hour, minute, second)
+			"Maybe I'll even let you out of it.", m.Author.Mention(), hour, minute, second)
 		doneMessage = fmt.Sprintf(
 			"Hey, you, %s!  It's about time to hit the arena, you lout.", m.Author.Mention())
 
@@ -114,11 +136,141 @@ func messageHandler(s *discordgo.Session, m *discordgo.MessageCreate) {
 		borkSchedule[m.Author.ID] = scheduleItem{
 			time.Now().Add(d),
 			c}
-		fmt.Println(borkSchedule)
+
+		saveSchedule()
+
+	case strings.HasPrefix("profile", f[0]):
+		var (
+			i          int
+			v          int
+		)
+
+		helpMessage = fmt.Sprintf("%s, you scumbag, cough up your info: time zone, max campaign energy, " +
+			"and number of ability point refreshes, like this: %sprofile EDT energy 178 ability 14.  If you don't " +
+			"tell me one of them, I'll use some default values.  They can be in any order.\n" +
+			"Your current profile is: time zone %s, campaign energy %d, ability points %d.",
+			m.Author.Mention(), config.BotPrefix, profile.TimeZone, profile.MaxEnergy, profile.MaxAbility)
+
+		if len(f) > 6{
+			fmt.Printf("You entered %d arguments", len(f))
+			s.ChannelMessageSend(m.ChannelID, helpMessage)
+			return
+		}
+
+		i = 1
+		for i < len(f){
+			if strings.HasPrefix("energy", f[i]){
+				if len(f) <= i+1{
+					s.ChannelMessageSend(m.ChannelID, helpMessage)
+					return
+				}
+				v, err = strconv.Atoi(f[i+1])
+				if err != nil{
+					s.ChannelMessageSend(m.ChannelID, helpMessage)
+					return
+				}
+				profile.MaxEnergy = v
+				i += 2
+			} else if strings.HasPrefix("ability", f[i]){
+				if len(f) <= i+1{
+					s.ChannelMessageSend(m.ChannelID, helpMessage)
+					return
+				}
+				v, err = strconv.Atoi(f[i+1])
+				if err != nil{
+					s.ChannelMessageSend(m.ChannelID, helpMessage)
+					return
+				}
+				profile.MaxAbility = v
+				i += 2
+			} else{
+				_, err := time.LoadLocation(f[i])
+				if err != nil{
+					s.ChannelMessageSend(m.ChannelID, helpMessage)
+					return
+				}
+				profile.TimeZone = f[i]
+				i += 1
+			}
+		}
+
+		users[m.Author.ID] = profile
+		s.ChannelMessageSend(m.ChannelID,
+			fmt.Sprintf("Here's your new info, %s: time zone is %s, max energy is %d, max ability points is %d\n",
+				m.Author.Mention(), profile.TimeZone, profile.MaxEnergy, profile.MaxAbility))
 	}
+
+	saveUsers()
 }
 
-//TODO: timers for Palantir, campaign energy, ability refresh, hourly warlord, daily warlord
+// loadUsers retrieves the Users struct from a file
+func loadUsers() (err error) {
+	b, err := ioutil.ReadFile("./data/users.json")
+	if err != nil {
+		fmt.Printf("Error reading users.json file: %s\n", err.Error())
+	} else {
+		err = json.Unmarshal(b, &users)
+		if err != nil {
+			fmt.Printf("Error unmarshaling users.json: %s\n", err.Error())
+		}
+	}
+	return
+}
+
+// saveUsers saves the Users struct to a file
+func saveUsers() (err error) {
+	b, err := json.Marshal(users)
+	if err != nil {
+		fmt.Printf("Error marshaling users.json: %s\n", err.Error())
+		return
+	}
+	err = ioutil.WriteFile("./data/users.json", b, 0644)
+	if err != nil {
+		fmt.Printf("Error writing users.json file: %s\n", err.Error())
+		return
+	}
+	return
+}
+
+func loadSchedule() (err error) {
+	// type (arena, warlord, ability, energy, palantir)
+	// Key: discordgo.User.ID
+	// Value: expiry_time
+	var (
+		b []byte
+		data map[string]time.Time
+	)
+
+	if b, err = ioutil.ReadFile("./borkSchedule.json"); err != nil {
+		fmt.Printf("Error reading borkSchedule.json file: %s\n", err.Error())
+		return
+	}
+	if err = json.Unmarshal(b, &data); err != nil {
+		fmt.Printf("Error unmarshaling borkSchedule.json: %s\n", err.Error())
+		return
+	}
+
+	return
+}
+
+func saveSchedule() (err error) {
+	// Write current data to file in case we have to restart
+	b, err := json.Marshal(borkSchedule)
+	if err != nil {
+		fmt.Printf("Error marshaling borkSchedule.json: %s\n", err.Error())
+		return
+	}
+	err = ioutil.WriteFile("./borkSchedule.json", b, 0644)
+	if err != nil {
+		fmt.Printf("Error writing borkSchedule.json file: %s\n", err.Error())
+		return
+	}
+	return
+}
+
+//TODO: increment user.uses
+//TODO: display times until all ppl are going
+//TODO: timers for Palantir, campaign energy, ability refresh, hourly warlord, daily warlord, requests
 //TODO: keep a struct of user data
 //TODO: say the local time too (or UTC if user doesn't give tz info)
 //TODO: vary the messages sent
