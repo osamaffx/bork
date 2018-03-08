@@ -36,12 +36,14 @@ type scheduleItem struct {
 var (
 	BotID           string
 	arenaSchedule   map[string]scheduleItem
+	energySchedule  map[string]scheduleItem
 	users           map[string]userInfo
 )
 
 func Start() {
 	users = make(map[string]userInfo)
 	arenaSchedule = make(map[string]scheduleItem)
+	energySchedule = make(map[string]scheduleItem)
 
 	loadUsers("./data/users.json")
 	//loadSchedule("./data/arena-schedule.json")
@@ -137,6 +139,55 @@ func messageHandler(s *discordgo.Session, m *discordgo.MessageCreate) {
 			c}
 
 		//saveSchedule("./data/arena_schedule.json")
+
+	case strings.HasPrefix("energy", f[0]):
+		helpMessage = fmt.Sprintf("%s, next time I'm gonna slice you up and feed you to the orclings " +
+			"if you can't figure this out!\nJust tell me your current energy and I'll do the rest.  " +
+			"You can also tell me your max if I don't already know it.  Just do it like this: " +
+			"%senergy 102 174.  It's simple, you dork!", m.Author.Mention(), config.BotPrefix)
+
+		if len(f) < 2 || len(f) > 3 {
+			s.ChannelMessageSend(m.ChannelID, helpMessage)
+			return
+		}
+
+		// If there's already a reminder, cancel it first.
+		if i, ok := energySchedule[m.Author.ID]; ok{
+			close(i.channel)
+			delete(energySchedule, m.Author.ID)
+		}
+
+		e, err = strconv.Atoi(f[1])
+		if err != nil{
+			s.ChannelMessageSend(m.ChannelID, helpMessage)
+			return
+		}
+
+		if len(f) == 3 {
+			max, err := strconv.Atoi(f[2])
+			if err != nil {
+				s.ChannelMessageSend(m.ChannelID, helpMessage)
+				return
+			}
+			profile.MaxEnergy = max
+		}
+
+		e = (profile.MaxEnergy-e) * energyRate - 60
+		hour := int(e/3600)
+		minute := int((e - 3600*hour)/60)
+		second := int(e - 3600*hour - 60*minute)
+		d = time.Duration(e) * time.Second
+		ackMessage = fmt.Sprintf("Alright, %s, I'll rattle your cage in %d:%02d:%02d.  " +
+			"Maybe I'll even let you out of it.", m.Author.Mention(), hour, minute, second)
+		doneMessage = fmt.Sprintf(
+			"Hey, you, %s!  Your campaign energy is just about full, you lazy bum!", m.Author.Mention())
+
+		c = messageTimer(s, m, d, ackMessage, doneMessage)
+		energySchedule[m.Author.ID] = scheduleItem{
+			time.Now().Add(d),
+			c}
+
+		//saveSchedule("./data/energy_schedule.json")
 
 
 	case strings.HasPrefix("profile", f[0]):
