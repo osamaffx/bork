@@ -23,10 +23,10 @@ const (
 // userInfo contains information on the players
 // values in a map[string]userInfo where the key is the Discord ID
 type userInfo struct {
-	TimeZone   string `json:"tz"`        // Time zone for user for reporting times
-	MaxEnergy  int    `json:max_energy`  // Max energy of user (i.e. 174 for lvl 80)
-	MaxAbility int    `json:max_ability` // Max ability points of user (default 12)
-	Uses       int    `json:Uses`        // Number of times user has called Bork
+	TimeZone   string `json:"tz"`          // Time zone for user for reporting times
+	MaxEnergy  int    `json:"max_energy"`  // Max energy of user (i.e. 174 for lvl 80)
+	MaxAbility int    `json:"max_ability"` // Max ability points of user (default 12)
+	Uses       int    `json:"Uses"`        // Number of times user has called Bork
 }
 
 type scheduleItem struct {
@@ -35,7 +35,7 @@ type scheduleItem struct {
 }
 
 var (
-	BotID           string
+	BorkID          string
 	arenaSchedule   map[string]scheduleItem
 	energySchedule  map[string]scheduleItem
 	abilitySchedule map[string]scheduleItem
@@ -62,7 +62,7 @@ func Start() {
 		fmt.Println(err.Error())
 	}
 
-	BotID = u.ID
+	BorkID = u.ID
 
 	goBot.AddHandler(messageHandler)
 
@@ -96,7 +96,7 @@ func messageHandler(s *discordgo.Session, m *discordgo.MessageCreate) {
 	}
 	profile.Uses += 1
 
-	if m.Author.ID == BotID || (config.BotChannel != "" && m.ChannelID != config.BotChannel) ||
+	if m.Author.ID == BorkID || (config.BotChannel != "" && m.ChannelID != config.BotChannel) ||
 		!strings.HasPrefix(m.Content, config.BotPrefix) {
 		return
 	}
