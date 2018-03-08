@@ -34,17 +34,17 @@ type scheduleItem struct {
 }
 
 var (
-	BotID        string
-	borkSchedule map[string]scheduleItem
-	users        map[string]userInfo
+	BotID           string
+	arenaSchedule   map[string]scheduleItem
+	users           map[string]userInfo
 )
 
 func Start() {
 	users = make(map[string]userInfo)
-	borkSchedule = make(map[string]scheduleItem)
+	arenaSchedule = make(map[string]scheduleItem)
 
-	loadUsers()
-	//loadSchedule()
+	loadUsers("./data/users.json")
+	//loadSchedule("./data/arena-schedule.json")
 
 	goBot, err := discordgo.New("Bot " + config.Token)
 	if err != nil {
@@ -104,16 +104,15 @@ func messageHandler(s *discordgo.Session, m *discordgo.MessageCreate) {
 			"if you can't figure this out!\nJust tell me your current energy and I'll do the rest, " +
 			"like this: %sarena 182.  It's simple, you dork!", m.Author.Mention(), config.BotPrefix)
 
-		if len(f) != 2{
+		if len(f) > 2 {
 			s.ChannelMessageSend(m.ChannelID, helpMessage)
 			return
 		}
 
 		// If there's already a reminder, cancel it first.
-		if i, ok := borkSchedule[m.Author.ID]; ok{
-			fmt.Println(borkSchedule[m.Author.ID])
+		if i, ok := arenaSchedule[m.Author.ID]; ok{
 			close(i.channel)
-			delete(borkSchedule, m.Author.ID)
+			delete(arenaSchedule, m.Author.ID)
 		}
 
 		e, err = strconv.Atoi(f[1])
@@ -133,11 +132,12 @@ func messageHandler(s *discordgo.Session, m *discordgo.MessageCreate) {
 			"Hey, you, %s!  It's about time to hit the arena, you lout.", m.Author.Mention())
 
 		c = messageTimer(s, m, d, ackMessage, doneMessage)
-		borkSchedule[m.Author.ID] = scheduleItem{
+		arenaSchedule[m.Author.ID] = scheduleItem{
 			time.Now().Add(d),
 			c}
 
-		saveSchedule()
+		//saveSchedule("./data/arena_schedule.json")
+
 
 	case strings.HasPrefix("profile", f[0]):
 		var (
@@ -194,39 +194,39 @@ func messageHandler(s *discordgo.Session, m *discordgo.MessageCreate) {
 			}
 		}
 
-		users[m.Author.ID] = profile
 		s.ChannelMessageSend(m.ChannelID,
 			fmt.Sprintf("Here's your new info, %s: time zone is %s, max energy is %d, max ability points is %d\n",
 				m.Author.Mention(), profile.TimeZone, profile.MaxEnergy, profile.MaxAbility))
 	}
 
-	saveUsers()
+	users[m.Author.ID] = profile
+	saveUsers("./data/users.json")
 }
 
-// loadUsers retrieves the Users struct from a file
-func loadUsers() (err error) {
-	b, err := ioutil.ReadFile("./data/users.json")
+// loadUsers retrieves the Users struct from a file.
+func loadUsers(filename string) (err error) {
+	b, err := ioutil.ReadFile(filename)
 	if err != nil {
-		fmt.Printf("Error reading users.json file: %s\n", err.Error())
+		fmt.Printf("Error reading %s file: %s\n", filename, err.Error())
 	} else {
 		err = json.Unmarshal(b, &users)
 		if err != nil {
-			fmt.Printf("Error unmarshaling users.json: %s\n", err.Error())
+			fmt.Printf("Error unmarshaling %s: %s\n", filename, err.Error())
 		}
 	}
 	return
 }
 
-// saveUsers saves the Users struct to a file
-func saveUsers() (err error) {
+// saveUsers saves the Users struct to a file.
+func saveUsers(filename string) (err error) {
 	b, err := json.Marshal(users)
 	if err != nil {
-		fmt.Printf("Error marshaling users.json: %s\n", err.Error())
+		fmt.Printf("Error marshaling %s: %s\n", filename, err.Error())
 		return
 	}
-	err = ioutil.WriteFile("./data/users.json", b, 0644)
+	err = ioutil.WriteFile(filename, b, 0644)
 	if err != nil {
-		fmt.Printf("Error writing users.json file: %s\n", err.Error())
+		fmt.Printf("Error writing %s file: %s\n", filename, err.Error())
 		return
 	}
 	return
@@ -268,10 +268,11 @@ func saveSchedule() (err error) {
 	return
 }
 
-//TODO: increment user.uses
 //TODO: display times until all ppl are going
-//TODO: timers for Palantir, campaign energy, ability refresh, hourly warlord, daily warlord, requests
-//TODO: keep a struct of user data
+//TODO: timers for Palantir
+//TODO: timer for orc jobs / misc
+//TODO: timers for warlords
+//TODO: timers for requests
 //TODO: say the local time too (or UTC if user doesn't give tz info)
 //TODO: vary the messages sent
 //TODO: orc adviser
