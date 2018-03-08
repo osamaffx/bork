@@ -1,4 +1,4 @@
-package bot
+package bork
 
 import (
 	"fmt"
@@ -35,7 +35,7 @@ type scheduleItem struct {
 }
 
 var (
-	BorkID          string
+	BotID           string
 	arenaSchedule   map[string]scheduleItem
 	energySchedule  map[string]scheduleItem
 	abilitySchedule map[string]scheduleItem
@@ -62,7 +62,7 @@ func Start() {
 		fmt.Println(err.Error())
 	}
 
-	BorkID = u.ID
+	BotID = u.ID
 
 	goBot.AddHandler(messageHandler)
 
@@ -89,17 +89,16 @@ func messageHandler(s *discordgo.Session, m *discordgo.MessageCreate) {
 		helpMessage string
 	)
 
-	fmt.Printf(">> %s\n", m.ContentWithMentionsReplaced())
-
 	if profile, ok = users[m.Author.ID]; !ok {
 		profile = userInfo{"GMT", 144, 12, 0}
 	}
 	profile.Uses += 1
 
-	if m.Author.ID == BorkID || (config.BotChannel != "" && m.ChannelID != config.BotChannel) ||
+	if m.Author.ID == BotID || (config.BotChannel != "" && m.ChannelID != config.BotChannel) ||
 		!strings.HasPrefix(m.Content, config.BotPrefix) {
 		return
 	}
+	fmt.Printf(">> %s\n", m.ContentWithMentionsReplaced())
 
 	f := strings.Split(m.Content[1:len(m.Content)], " ")
 
@@ -334,37 +333,40 @@ func saveUsers(filename string) (err error) {
 	return
 }
 
-func loadSchedule() (err error) {
-	// type (arena, warlord, ability, energy, palantir)
-	// Key: discordgo.User.ID
-	// Value: expiry_time
+// loadSchedule saves the current schedule information to a file.
+func loadSchedule(filename string) (err error) {
 	var (
 		b []byte
 		data map[string]time.Time
 	)
 
-	if b, err = ioutil.ReadFile("./borkSchedule.json"); err != nil {
-		fmt.Printf("Error reading borkSchedule.json file: %s\n", err.Error())
+	if b, err = ioutil.ReadFile(filename); err != nil {
+		fmt.Printf("Error reading %s file: %s\n", filename, err.Error())
 		return
 	}
 	if err = json.Unmarshal(b, &data); err != nil {
-		fmt.Printf("Error unmarshaling borkSchedule.json: %s\n", err.Error())
+		fmt.Printf("Error unmarshaling %s: %s\n", filename, err.Error())
 		return
 	}
 
 	return
 }
 
-func saveSchedule() (err error) {
-	// Write current data to file in case we have to restart
-	b, err := json.Marshal(borkSchedule)
+// saveSchedule saves the current data to a file in case we have to restart
+func saveSchedule(schedule map[string]scheduleItem, filename string) (err error) {
+	smap := make(map[string]time.Time)
+	for k, v := range schedule {
+		smap[k] = v.expireAt
+	}
+
+	b, err := json.Marshal(smap)
 	if err != nil {
-		fmt.Printf("Error marshaling borkSchedule.json: %s\n", err.Error())
+		fmt.Printf("Error marshaling %s: %s\n", filename, err.Error())
 		return
 	}
-	err = ioutil.WriteFile("./borkSchedule.json", b, 0644)
+	err = ioutil.WriteFile(filename, b, 0644)
 	if err != nil {
-		fmt.Printf("Error writing borkSchedule.json file: %s\n", err.Error())
+		fmt.Printf("Error writing %s file: %s\n", filename, err.Error())
 		return
 	}
 	return
