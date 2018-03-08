@@ -7,12 +7,10 @@ import (
 )
 
 var (
-	// Public variables
 	Token      string
 	BotPrefix  string
 	BotChannel string
 
-	// Private variables
 	config *configStruct
 )
 

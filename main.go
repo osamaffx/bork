@@ -4,7 +4,7 @@ import (
 	"flag"
 	"fmt"
 
-	"github.com/westphae/bork/bork"
+	"github.com/westphae/bork/bot"
 	"github.com/westphae/bork/config"
 )
 
@@ -18,7 +18,7 @@ func main() {
 		return
 	}
 
-	bork.Start()
+	bot.Start()
 
 	<-make(chan struct{})
 	return

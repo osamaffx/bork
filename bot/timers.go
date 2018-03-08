@@ -1,81 +1,42 @@
-package bork
+package bot
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/westphae/bork/config"
-	"time"
-	"strconv"
-	"encoding/json"
-	"io/ioutil"
 )
-
-const (
-	maxMembers = 30 // Maximum number of members in a fellowship
-	arenaEnergyRate = 144 // Arena energy refreshes one point per 2.4 minutes = 144 seconds
-	energyRate = 4*60 // Energy refreshes one point per 4 minutes = 240 seconds
-	abilityRate = 5*60 // Ability points refresh one point per 5 minutes = 300 seconds
-	palantirRate = 4*60*60 // Palantir refreshes once per 4 hours
-)
-
-// userInfo contains information on the players
-// values in a map[string]userInfo where the key is the Discord ID
-type userInfo struct {
-	TimeZone   string `json:"tz"`          // Time zone for user for reporting times
-	MaxEnergy  int    `json:"max_energy"`  // Max energy of user (i.e. 174 for lvl 80)
-	MaxAbility int    `json:"max_ability"` // Max ability points of user (default 12)
-	Uses       int    `json:"Uses"`        // Number of times user has called Bork
-}
 
 type scheduleItem struct {
 	expireAt time.Time
 	channel  chan struct{}
 }
 
+const (
+	arenaEnergyRate = 144 // Arena energy refreshes one point per 2.4 minutes = 144 seconds
+	energyRate = 4*60 // Energy refreshes one point per 4 minutes = 240 seconds
+	abilityRate = 5*60 // Ability points refresh one point per 5 minutes = 300 seconds
+	palantirRate = 4*60*60 // Palantir refreshes once per 4 hours
+)
+
 var (
-	BotID           string
 	arenaSchedule   map[string]scheduleItem
 	energySchedule  map[string]scheduleItem
 	abilitySchedule map[string]scheduleItem
-	users           map[string]userInfo
 )
 
-func Start() {
-	users = make(map[string]userInfo)
+func timersSetup() {
 	arenaSchedule = make(map[string]scheduleItem)
 	energySchedule = make(map[string]scheduleItem)
 	abilitySchedule = make(map[string]scheduleItem)
 
-	loadUsers("./data/users.json")
 	//loadSchedule("./data/arena-schedule.json")
-
-	goBot, err := discordgo.New("Bot " + config.Token)
-	if err != nil {
-		fmt.Println(err.Error())
-		return
-	}
-
-	u, err := goBot.User("@me")
-	if err != nil {
-		fmt.Println(err.Error())
-	}
-
-	BotID = u.ID
-
-	goBot.AddHandler(messageHandler)
-
-	err = goBot.Open()
-	if err != nil {
-		fmt.Println(err.Error())
-		return
-	}
-
-	fmt.Println("Bork is running!")
 }
 
-func messageHandler(s *discordgo.Session, m *discordgo.MessageCreate) {
+func timerHandler(s *discordgo.Session, m *discordgo.MessageCreate) {
 
 	var (
 		profile     userInfo
@@ -94,7 +55,7 @@ func messageHandler(s *discordgo.Session, m *discordgo.MessageCreate) {
 	}
 	profile.Uses += 1
 
-	if m.Author.ID == BotID || (config.BotChannel != "" && m.ChannelID != config.BotChannel) ||
+	if m.Author.ID == BorkID || (config.BotChannel != "" && m.ChannelID != config.BotChannel) ||
 		!strings.HasPrefix(m.Content, config.BotPrefix) {
 		return
 	}
@@ -239,137 +200,10 @@ func messageHandler(s *discordgo.Session, m *discordgo.MessageCreate) {
 			c}
 
 		//saveSchedule("./data/ability_schedule.json")
-
-	case strings.HasPrefix("profile", f[0]):
-		var (
-			i          int
-			v          int
-		)
-
-		helpMessage = fmt.Sprintf("%s, you scumbag, cough up your info: time zone, max campaign energy, " +
-			"and number of ability point refreshes, like this: %sprofile EDT energy 178 ability 14.  If you don't " +
-			"tell me one of them, I'll use some default values.  They can be in any order.\n" +
-			"Your current profile is: time zone %s, campaign energy %d, ability points %d.",
-			m.Author.Mention(), config.BotPrefix, profile.TimeZone, profile.MaxEnergy, profile.MaxAbility)
-
-		if len(f) > 6{
-			fmt.Printf("You entered %d arguments", len(f))
-			s.ChannelMessageSend(m.ChannelID, helpMessage)
-			return
-		}
-
-		i = 1
-		for i < len(f){
-			if strings.HasPrefix("energy", f[i]){
-				if len(f) <= i+1{
-					s.ChannelMessageSend(m.ChannelID, helpMessage)
-					return
-				}
-				v, err = strconv.Atoi(f[i+1])
-				if err != nil{
-					s.ChannelMessageSend(m.ChannelID, helpMessage)
-					return
-				}
-				profile.MaxEnergy = v
-				i += 2
-			} else if strings.HasPrefix("ability", f[i]){
-				if len(f) <= i+1{
-					s.ChannelMessageSend(m.ChannelID, helpMessage)
-					return
-				}
-				v, err = strconv.Atoi(f[i+1])
-				if err != nil{
-					s.ChannelMessageSend(m.ChannelID, helpMessage)
-					return
-				}
-				profile.MaxAbility = v
-				i += 2
-			} else{
-				_, err := time.LoadLocation(f[i])
-				if err != nil{
-					s.ChannelMessageSend(m.ChannelID, helpMessage)
-					return
-				}
-				profile.TimeZone = f[i]
-				i += 1
-			}
-		}
-
-		s.ChannelMessageSend(m.ChannelID,
-			fmt.Sprintf("Here's your new info, %s: time zone is %s, max energy is %d, max ability points is %d\n",
-				m.Author.Mention(), profile.TimeZone, profile.MaxEnergy, profile.MaxAbility))
 	}
 
 	users[m.Author.ID] = profile
 	saveUsers("./data/users.json")
-}
-
-// loadUsers retrieves the Users struct from a file.
-func loadUsers(filename string) (err error) {
-	b, err := ioutil.ReadFile(filename)
-	if err != nil {
-		fmt.Printf("Error reading %s file: %s\n", filename, err.Error())
-	} else {
-		err = json.Unmarshal(b, &users)
-		if err != nil {
-			fmt.Printf("Error unmarshaling %s: %s\n", filename, err.Error())
-		}
-	}
-	return
-}
-
-// saveUsers saves the Users struct to a file.
-func saveUsers(filename string) (err error) {
-	b, err := json.Marshal(users)
-	if err != nil {
-		fmt.Printf("Error marshaling %s: %s\n", filename, err.Error())
-		return
-	}
-	err = ioutil.WriteFile(filename, b, 0644)
-	if err != nil {
-		fmt.Printf("Error writing %s file: %s\n", filename, err.Error())
-		return
-	}
-	return
-}
-
-// loadSchedule saves the current schedule information to a file.
-func loadSchedule(filename string) (err error) {
-	var (
-		b []byte
-		data map[string]time.Time
-	)
-
-	if b, err = ioutil.ReadFile(filename); err != nil {
-		fmt.Printf("Error reading %s file: %s\n", filename, err.Error())
-		return
-	}
-	if err = json.Unmarshal(b, &data); err != nil {
-		fmt.Printf("Error unmarshaling %s: %s\n", filename, err.Error())
-		return
-	}
-
-	return
-}
-
-// saveSchedule saves the current data to a file in case we have to restart
-func saveSchedule(schedule map[string]scheduleItem, filename string) (err error) {
-	smap := make(map[string]time.Time)
-	for k, v := range schedule {
-		smap[k] = v.expireAt
-	}
-
-	b, err := json.Marshal(smap)
-	if err != nil {
-		fmt.Printf("Error marshaling %s: %s\n", filename, err.Error())
-		return
-	}
-	err = ioutil.WriteFile(filename, b, 0644)
-	if err != nil {
-		fmt.Printf("Error writing %s file: %s\n", filename, err.Error())
-		return
-	}
-	return
 }
 
 //TODO: display times until all ppl are going
