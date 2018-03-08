@@ -16,6 +16,7 @@ const (
 	maxMembers = 30 // Maximum number of members in a fellowship
 	arenaEnergyRate = 144 // Arena energy refreshes one point per 2.4 minutes = 144 seconds
 	energyRate = 4*60 // Energy refreshes one point per 4 minutes = 240 seconds
+	abilityRate = 5*60 // Ability points refresh one point per 5 minutes = 300 seconds
 	palantirRate = 4*60*60 // Palantir refreshes once per 4 hours
 )
 
@@ -37,6 +38,7 @@ var (
 	BotID           string
 	arenaSchedule   map[string]scheduleItem
 	energySchedule  map[string]scheduleItem
+	abilitySchedule map[string]scheduleItem
 	users           map[string]userInfo
 )
 
@@ -44,6 +46,7 @@ func Start() {
 	users = make(map[string]userInfo)
 	arenaSchedule = make(map[string]scheduleItem)
 	energySchedule = make(map[string]scheduleItem)
+	abilitySchedule = make(map[string]scheduleItem)
 
 	loadUsers("./data/users.json")
 	//loadSchedule("./data/arena-schedule.json")
@@ -189,6 +192,54 @@ func messageHandler(s *discordgo.Session, m *discordgo.MessageCreate) {
 
 		//saveSchedule("./data/energy_schedule.json")
 
+	case strings.HasPrefix("ability", f[0]):
+		helpMessage = fmt.Sprintf("%s, next time I'm gonna slice you up and feed you to the orclings " +
+			"if you can't figure this out!\nJust tell me your current ability points and I'll do the rest.  " +
+			"You can also tell me your max if I don't already know it.  Just do it like this: " +
+			"%sability 2 13.  It's simple, you dork!", m.Author.Mention(), config.BotPrefix)
+
+		if len(f) < 2 || len(f) > 3 {
+			s.ChannelMessageSend(m.ChannelID, helpMessage)
+			return
+		}
+
+		// If there's already a reminder, cancel it first.
+		if i, ok := abilitySchedule[m.Author.ID]; ok{
+			close(i.channel)
+			delete(abilitySchedule, m.Author.ID)
+		}
+
+		e, err = strconv.Atoi(f[1])
+		if err != nil{
+			s.ChannelMessageSend(m.ChannelID, helpMessage)
+			return
+		}
+
+		if len(f) == 3 {
+			max, err := strconv.Atoi(f[2])
+			if err != nil {
+				s.ChannelMessageSend(m.ChannelID, helpMessage)
+				return
+			}
+			profile.MaxAbility = max
+		}
+
+		e = (profile.MaxAbility-e) * abilityRate - 60
+		hour := int(e/3600)
+		minute := int((e - 3600*hour)/60)
+		second := int(e - 3600*hour - 60*minute)
+		d = time.Duration(e) * time.Second
+		ackMessage = fmt.Sprintf("Alright, %s, I'll rattle your cage in %d:%02d:%02d.  " +
+			"Maybe I'll even let you out of it.", m.Author.Mention(), hour, minute, second)
+		doneMessage = fmt.Sprintf(
+			"Hey, you, %s!  Your ability points are just about full, you lazy bum!", m.Author.Mention())
+
+		c = messageTimer(s, m, d, ackMessage, doneMessage)
+		abilitySchedule[m.Author.ID] = scheduleItem{
+			time.Now().Add(d),
+			c}
+
+		//saveSchedule("./data/ability_schedule.json")
 
 	case strings.HasPrefix("profile", f[0]):
 		var (
