@@ -21,7 +21,7 @@ type userInfo struct {
 
 var users map[string]userInfo
 
-func usersSetup() {
+func usersSetup(s *discordgo.Session) {
 	users = make(map[string]userInfo)
 
 	loadUsers("./data/users.json")

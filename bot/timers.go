@@ -30,10 +30,36 @@ var (
 	schedule map[string]map[string]scheduleItem
 )
 
-func timersSetup() {
+func timersSetup(s *discordgo.Session) {
 	schedule = make(map[string]map[string]scheduleItem)
+	data, err := loadSchedule("./data/schedule.json")
+	if err != nil {
+		fmt.Println(err.Error())
+		return
+	}
 
-	//loadSchedule("./data/schedule.json")
+	for id, v := range data {
+		user, err := s.User(id)
+		if err != nil {
+			fmt.Println(err.Error())
+			continue
+		}
+		schedule[id] = make(map[string]scheduleItem)
+
+		for sType, t := range v {
+			d := t.Sub(time.Now())
+			if d < 0 {
+				fmt.Printf("Too late to run %s timer at %s\n", sType, t)
+				continue
+			}
+
+			c := messageTimer(s, config.BotChannel, d,
+				fmt.Sprintf("%s, you have full %s.\n", user.Mention(), sType),
+			)
+
+			schedule[id][sType] = scheduleItem{time.Now().Add(d), c}
+		}
+	}
 }
 
 func timerHandler(s *discordgo.Session, m *discordgo.MessageCreate) {
@@ -58,10 +84,13 @@ func timerHandler(s *discordgo.Session, m *discordgo.MessageCreate) {
 	profile.Uses += 1
 
 	helpMessage = fmt.Sprintf("You can enter these commands:\n" +
-		"%[1]sa[rena] <current arena energy> [<max arena energy=300>]\n" +
-		"%[1]se[nergy] <current campaign energy> [<max campaign energy=178>]\n" +
-		"%[1]sab[ility] <current ability points> [<max ability points=12>]\n",
-		config.BotPrefix)
+		"%[1]p[rofile] [<GMT offset=-4>] [energy <max campaign energy=%[3]s>] [ability <max ability points=%[4]s>]\n" +
+		"%[1]sa[rena] <current arena energy> [<max arena energy=%[2]s>]\n" +
+		"%[1]se[nergy] <current campaign energy> [<max campaign energy=%[3]s>]\n" +
+		"%[1]sab[ility] <current ability points> [<max ability points=%[4]s>]\n" +
+		"Once you tell me a max, it will be saved to your profile and " +
+		"you don't have to enter it again unless it changes.\n",
+		config.BotPrefix, maxArenaEnergy, maxEnergy, maxAbility)
 
 	if m.Author.ID == BorkID || (config.BotChannel != "" && m.ChannelID != config.BotChannel) ||
 		!strings.HasPrefix(m.Content, config.BotPrefix) {
@@ -131,16 +160,20 @@ func timerHandler(s *discordgo.Session, m *discordgo.MessageCreate) {
 	second := int(e - 3600*hour - 60*minute)
 	d = time.Duration(e) * time.Second
 
-	c = messageTimer(s, m, d,
-		fmt.Sprintf("%s, you will receive an alert for %s in %d:%02d:%02d.",
+
+	s.ChannelMessageSend(m.ChannelID,
+		fmt.Sprintf("%s, you will receive an alert for %s in %d:%02d:%02d.\n",
 			m.Author.Mention(), sType, hour, minute, second),
-		fmt.Sprintf("%s, you have full %s.", m.Author.Mention(), sType),
+	)
+
+	c = messageTimer(s, m.ChannelID, d,
+		fmt.Sprintf("%s, you have full %s.\n", m.Author.Mention(), sType),
 	)
 	schedule[m.Author.ID][sType] = scheduleItem{time.Now().Add(d),c}
 
 	users[m.Author.ID] = profile
 	saveUsers("./data/users.json")
-	//saveSchedule("./data/schedule.json")
+	saveSchedule("./data/schedule.json")
 }
 
 //TODO: timers for Palantir
@@ -152,20 +185,17 @@ func timerHandler(s *discordgo.Session, m *discordgo.MessageCreate) {
 //TODO: vary the messages sent
 //TODO: orc adviser
 //TODO: inscription adviser (who needs which)
-func messageTimer(s *discordgo.Session, m *discordgo.MessageCreate, e time.Duration,
-	ackMessage string, doneMessage string) (c chan struct{}){
+func messageTimer(s *discordgo.Session, channelID string, e time.Duration,
+	doneMessage string) (c chan struct{}){
 
 	c = make(chan struct{}, 1)
-
-	s.ChannelMessageSend(m.ChannelID, ackMessage)
 
 	go func() {
 		t := time.After(e)
 		select {
 		case <-t:
-			s.ChannelMessageSend(m.ChannelID, doneMessage)
+			s.ChannelMessageSend(channelID, doneMessage)
 		case <-c:
-			fmt.Sprintf("! Canceling %s reminder", m.Author)
 		}
 	}()
 

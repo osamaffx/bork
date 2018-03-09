@@ -23,10 +23,10 @@ func Start() {
 
 	BorkID = u.ID
 
-	usersSetup()
+	usersSetup(goBot)
 	goBot.AddHandler(profileHandler)
 
-	timersSetup()
+	timersSetup(goBot)
 	goBot.AddHandler(timerHandler)
 
 	err = goBot.Open()

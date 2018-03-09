@@ -37,16 +37,14 @@ func saveUsers(filename string) (err error) {
 }
 
 // loadSchedule saves the current schedule information to a file.
-func loadSchedule(filename string) (err error) {
-	var (
-		b []byte
-		data map[string]time.Time
-	)
+func loadSchedule(filename string) (data map[string]map[string]time.Time, err error) {
+	var b []byte
 
 	if b, err = ioutil.ReadFile(filename); err != nil {
 		fmt.Printf("Error reading %s file: %s\n", filename, err.Error())
 		return
 	}
+
 	if err = json.Unmarshal(b, &data); err != nil {
 		fmt.Printf("Error unmarshaling %s: %s\n", filename, err.Error())
 		return
@@ -56,10 +54,13 @@ func loadSchedule(filename string) (err error) {
 }
 
 // saveSchedule saves the current data to a file in case we have to restart
-func saveSchedule(schedule map[string]scheduleItem, filename string) (err error) {
-	smap := make(map[string]time.Time)
+func saveSchedule(filename string) (err error) {
+	smap := make(map[string]map[string]time.Time)
 	for k, v := range schedule {
-		smap[k] = v.expireAt
+		smap[k] = make(map[string]time.Time)
+		for l, w := range v {
+			smap[k][l] = w.expireAt
+		}
 	}
 
 	b, err := json.Marshal(smap)
