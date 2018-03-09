@@ -17,43 +17,51 @@ type scheduleItem struct {
 
 const (
 	arenaEnergyRate = 144 // Arena energy refreshes one point per 2.4 minutes = 144 seconds
+	maxArenaEnergy = 300
 	energyRate = 4*60 // Energy refreshes one point per 4 minutes = 240 seconds
+	maxEnergy = 178
 	abilityRate = 5*60 // Ability points refresh one point per 5 minutes = 300 seconds
+	maxAbility = 12
 	palantirRate = 4*60*60 // Palantir refreshes once per 4 hours
+	maxPalantir = 1
 )
 
 var (
-	arenaSchedule   map[string]scheduleItem
-	energySchedule  map[string]scheduleItem
-	abilitySchedule map[string]scheduleItem
+	schedule map[string]map[string]scheduleItem
 )
 
 func timersSetup() {
-	arenaSchedule = make(map[string]scheduleItem)
-	energySchedule = make(map[string]scheduleItem)
-	abilitySchedule = make(map[string]scheduleItem)
+	schedule = make(map[string]map[string]scheduleItem)
 
-	//loadSchedule("./data/arena-schedule.json")
+	//loadSchedule("./data/schedule.json")
 }
 
 func timerHandler(s *discordgo.Session, m *discordgo.MessageCreate) {
 
 	var (
-		profile     userInfo
-		c           chan struct{}
-		d           time.Duration
-		e           int
-		ok          bool
-		err         error
-		ackMessage  string
-		doneMessage string
-		helpMessage string
+		profile      userInfo
+		userSchedule map[string]scheduleItem
+		c            chan struct{}
+		d            time.Duration
+		e            int
+		ok           bool
+		err          error
+		sType        string
+		rate         int
+		max, newMax  int
+		helpMessage  string
 	)
 
 	if profile, ok = users[m.Author.ID]; !ok {
-		profile = userInfo{"GMT", 144, 12, 0}
+		profile = userInfo{"GMT", maxEnergy, maxAbility, 0}
 	}
 	profile.Uses += 1
+
+	helpMessage = fmt.Sprintf("You can enter these commands:\n" +
+		"%[1]sa[rena] <current arena energy> [<max arena energy=300>]\n" +
+		"%[1]se[nergy] <current campaign energy> [<max campaign energy=178>]\n" +
+		"%[1]sab[ility] <current ability points> [<max ability points=12>]\n",
+		config.BotPrefix)
 
 	if m.Author.ID == BorkID || (config.BotChannel != "" && m.ChannelID != config.BotChannel) ||
 		!strings.HasPrefix(m.Content, config.BotPrefix) {
@@ -63,154 +71,83 @@ func timerHandler(s *discordgo.Session, m *discordgo.MessageCreate) {
 
 	f := strings.Split(m.Content[1:len(m.Content)], " ")
 
+	if userSchedule, ok = schedule[m.Author.ID]; !ok {
+		schedule[m.Author.ID] = make(map[string]scheduleItem)
+	}
+
+	if len(f) < 2 || len(f) > 3 {
+		s.ChannelMessageSend(m.ChannelID, helpMessage )
+		return
+	}
+
+	e, err = strconv.Atoi(f[1])
+	if err != nil{
+		s.ChannelMessageSend(m.ChannelID, helpMessage)
+		return
+	}
+
+	if len(f) == 3 {
+		newMax, err = strconv.Atoi(f[2])
+		if err != nil {
+			s.ChannelMessageSend(m.ChannelID, helpMessage)
+			return
+		}
+	}
+
 	switch {
 	case strings.HasPrefix("arena", f[0]):
-		helpMessage = fmt.Sprintf("%s, next time I'm gonna slice you up and feed you to the orclings " +
-			"if you can't figure this out!\nJust tell me your current energy and I'll do the rest, " +
-			"like this: %sarena 182.  It's simple, you dork!", m.Author.Mention(), config.BotPrefix)
-
-		if len(f) > 2 {
-			s.ChannelMessageSend(m.ChannelID, helpMessage)
-			return
+		sType = "arena energy"
+		rate = arenaEnergyRate
+		if newMax > 0 {
+			max = newMax
+		} else {
+			max = maxArenaEnergy
 		}
-
-		// If there's already a reminder, cancel it first.
-		if i, ok := arenaSchedule[m.Author.ID]; ok{
-			close(i.channel)
-			delete(arenaSchedule, m.Author.ID)
-		}
-
-		e, err = strconv.Atoi(f[1])
-		if err != nil{
-			s.ChannelMessageSend(m.ChannelID, helpMessage)
-			return
-		}
-
-		e = (300-e) * arenaEnergyRate - 60
-		hour := int(e/3600)
-		minute := int((e - 3600*hour)/60)
-		second := int(e - 3600*hour - 60*minute)
-		d = time.Duration(e) * time.Second
-		ackMessage = fmt.Sprintf("Alright, %s, I'll rattle your cage in %d:%02d:%02d.  " +
-			"Maybe I'll even let you out of it.", m.Author.Mention(), hour, minute, second)
-		doneMessage = fmt.Sprintf(
-			"Hey, you, %s!  It's about time to hit the arena, you lout.", m.Author.Mention())
-
-		c = messageTimer(s, m, d, ackMessage, doneMessage)
-		arenaSchedule[m.Author.ID] = scheduleItem{
-			time.Now().Add(d),
-			c}
-
-		//saveSchedule("./data/arena_schedule.json")
-
 	case strings.HasPrefix("energy", f[0]):
-		helpMessage = fmt.Sprintf("%s, next time I'm gonna slice you up and feed you to the orclings " +
-			"if you can't figure this out!\nJust tell me your current energy and I'll do the rest.  " +
-			"You can also tell me your max if I don't already know it.  Just do it like this: " +
-			"%senergy 102 174.  It's simple, you dork!", m.Author.Mention(), config.BotPrefix)
-
-		if len(f) < 2 || len(f) > 3 {
-			s.ChannelMessageSend(m.ChannelID, helpMessage)
-			return
+		sType = "campaign energy"
+		rate = energyRate
+		if newMax > 0 {
+			profile.MaxEnergy = newMax
 		}
-
-		// If there's already a reminder, cancel it first.
-		if i, ok := energySchedule[m.Author.ID]; ok{
-			close(i.channel)
-			delete(energySchedule, m.Author.ID)
-		}
-
-		e, err = strconv.Atoi(f[1])
-		if err != nil{
-			s.ChannelMessageSend(m.ChannelID, helpMessage)
-			return
-		}
-
-		if len(f) == 3 {
-			max, err := strconv.Atoi(f[2])
-			if err != nil {
-				s.ChannelMessageSend(m.ChannelID, helpMessage)
-				return
-			}
-			profile.MaxEnergy = max
-		}
-
-		e = (profile.MaxEnergy-e) * energyRate - 60
-		hour := int(e/3600)
-		minute := int((e - 3600*hour)/60)
-		second := int(e - 3600*hour - 60*minute)
-		d = time.Duration(e) * time.Second
-		ackMessage = fmt.Sprintf("Alright, %s, I'll rattle your cage in %d:%02d:%02d.  " +
-			"Maybe I'll even let you out of it.", m.Author.Mention(), hour, minute, second)
-		doneMessage = fmt.Sprintf(
-			"Hey, you, %s!  Your campaign energy is just about full, you lazy bum!", m.Author.Mention())
-
-		c = messageTimer(s, m, d, ackMessage, doneMessage)
-		energySchedule[m.Author.ID] = scheduleItem{
-			time.Now().Add(d),
-			c}
-
-		//saveSchedule("./data/energy_schedule.json")
-
+		max = profile.MaxEnergy
 	case strings.HasPrefix("ability", f[0]):
-		helpMessage = fmt.Sprintf("%s, next time I'm gonna slice you up and feed you to the orclings " +
-			"if you can't figure this out!\nJust tell me your current ability points and I'll do the rest.  " +
-			"You can also tell me your max if I don't already know it.  Just do it like this: " +
-			"%sability 2 13.  It's simple, you dork!", m.Author.Mention(), config.BotPrefix)
-
-		if len(f) < 2 || len(f) > 3 {
-			s.ChannelMessageSend(m.ChannelID, helpMessage)
-			return
+		sType = "ability points"
+		rate = abilityRate
+		if newMax > 0 {
+			profile.MaxAbility = newMax
 		}
-
-		// If there's already a reminder, cancel it first.
-		if i, ok := abilitySchedule[m.Author.ID]; ok{
-			close(i.channel)
-			delete(abilitySchedule, m.Author.ID)
-		}
-
-		e, err = strconv.Atoi(f[1])
-		if err != nil{
-			s.ChannelMessageSend(m.ChannelID, helpMessage)
-			return
-		}
-
-		if len(f) == 3 {
-			max, err := strconv.Atoi(f[2])
-			if err != nil {
-				s.ChannelMessageSend(m.ChannelID, helpMessage)
-				return
-			}
-			profile.MaxAbility = max
-		}
-
-		e = (profile.MaxAbility-e) * abilityRate - 60
-		hour := int(e/3600)
-		minute := int((e - 3600*hour)/60)
-		second := int(e - 3600*hour - 60*minute)
-		d = time.Duration(e) * time.Second
-		ackMessage = fmt.Sprintf("Alright, %s, I'll rattle your cage in %d:%02d:%02d.  " +
-			"Maybe I'll even let you out of it.", m.Author.Mention(), hour, minute, second)
-		doneMessage = fmt.Sprintf(
-			"Hey, you, %s!  Your ability points are just about full, you lazy bum!", m.Author.Mention())
-
-		c = messageTimer(s, m, d, ackMessage, doneMessage)
-		abilitySchedule[m.Author.ID] = scheduleItem{
-			time.Now().Add(d),
-			c}
-
-		//saveSchedule("./data/ability_schedule.json")
+		max = profile.MaxAbility
 	}
+
+	// If there's already a reminder, cancel it first.
+	if i, ok := userSchedule[sType]; ok {
+		close(i.channel)
+		delete(userSchedule, sType)
+	}
+
+	e = (max-e) * rate - 60
+	hour := int(e/3600)
+	minute := int((e - 3600*hour)/60)
+	second := int(e - 3600*hour - 60*minute)
+	d = time.Duration(e) * time.Second
+
+	c = messageTimer(s, m, d,
+		fmt.Sprintf("%s, you will receive an alert for %s in %d:%02d:%02d.",
+			m.Author.Mention(), sType, hour, minute, second),
+		fmt.Sprintf("%s, you have full %s.", m.Author.Mention(), sType),
+	)
+	schedule[m.Author.ID][sType] = scheduleItem{time.Now().Add(d),c}
 
 	users[m.Author.ID] = profile
 	saveUsers("./data/users.json")
+	//saveSchedule("./data/schedule.json")
 }
 
-//TODO: display times until all ppl are going
 //TODO: timers for Palantir
 //TODO: timer for orc jobs / misc
 //TODO: timers for warlords
 //TODO: timers for requests
+//TODO: display times until all ppl are going
 //TODO: say the local time too (or UTC if user doesn't give tz info)
 //TODO: vary the messages sent
 //TODO: orc adviser
