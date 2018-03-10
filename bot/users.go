@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/westphae/bork/config"
@@ -32,7 +31,6 @@ func profileHandler(s *discordgo.Session, m *discordgo.MessageCreate) {
 		profile     userInfo
 		ok          bool
 		err         error
-		helpMessage string
 		i           int
 		v           int
 	)
@@ -41,10 +39,9 @@ func profileHandler(s *discordgo.Session, m *discordgo.MessageCreate) {
 		!strings.HasPrefix(m.Content, config.BotPrefix) {
 		return
 	}
-	fmt.Printf(">> %s\n", m.ContentWithMentionsReplaced())
 
 	if profile, ok = users[m.Author.ID]; !ok {
-		profile = userInfo{"GMT", 144, 12, 0}
+		profile = userInfo{"-5", 144, 12, 0}
 	}
 	profile.Uses += 1
 
@@ -54,14 +51,8 @@ func profileHandler(s *discordgo.Session, m *discordgo.MessageCreate) {
 		return
 	}
 
-	helpMessage = fmt.Sprintf("%s, you scumbag, cough up your info: time zone, max campaign energy, " +
-		"and number of ability point refreshes, like this: %sprofile EDT energy 178 ability 14.  If you don't " +
-		"tell me one of them, I'll use some default values.  They can be in any order.\n" +
-		"Your current profile is: time zone %s, campaign energy %d, ability points %d.",
-		m.Author.Mention(), config.BotPrefix, profile.TimeZone, profile.MaxEnergy, profile.MaxAbility)
-
 	if len(f) > 6 {
-		s.ChannelMessageSend(m.ChannelID, helpMessage)
+		sendHelpMessage(s)
 		return
 	}
 
@@ -69,34 +60,36 @@ func profileHandler(s *discordgo.Session, m *discordgo.MessageCreate) {
 	for i < len(f){
 		if strings.HasPrefix("energy", f[i]) {
 			if len(f) <= i+1{
-				s.ChannelMessageSend(m.ChannelID, helpMessage)
+				sendHelpMessage(s)
 				return
 			}
 			v, err = strconv.Atoi(f[i+1])
 			if err != nil{
-				s.ChannelMessageSend(m.ChannelID, helpMessage)
+				sendHelpMessage(s)
 				return
 			}
 			profile.MaxEnergy = v
 			i += 2
 		} else if strings.HasPrefix("ability", f[i]) {
 			if len(f) <= i+1{
-				s.ChannelMessageSend(m.ChannelID, helpMessage)
+				sendHelpMessage(s)
 				return
 			}
 			v, err = strconv.Atoi(f[i+1])
 			if err != nil{
-				s.ChannelMessageSend(m.ChannelID, helpMessage)
+				sendHelpMessage(s)
 				return
 			}
 			profile.MaxAbility = v
 			i += 2
 		} else {
+			/*
 			_, err := time.LoadLocation(f[i])
 			if err != nil{
-				s.ChannelMessageSend(m.ChannelID, helpMessage)
+				sendHelpMessage(s)
 				return
 			}
+			*/
 			profile.TimeZone = f[i]
 			i += 1
 		}

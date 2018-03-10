@@ -75,7 +75,6 @@ func timerHandler(s *discordgo.Session, m *discordgo.MessageCreate) {
 		sType        string
 		rate         int
 		max, newMax  int
-		helpMessage  string
 	)
 
 	if profile, ok = users[m.Author.ID]; !ok {
@@ -83,42 +82,38 @@ func timerHandler(s *discordgo.Session, m *discordgo.MessageCreate) {
 	}
 	profile.Uses += 1
 
-	helpMessage = fmt.Sprintf("You can enter these commands:\n" +
-		"%[1]p[rofile] [<GMT offset=-4>] [energy <max campaign energy=%[3]s>] [ability <max ability points=%[4]s>]\n" +
-		"%[1]sa[rena] <current arena energy> [<max arena energy=%[2]s>]\n" +
-		"%[1]se[nergy] <current campaign energy> [<max campaign energy=%[3]s>]\n" +
-		"%[1]sab[ility] <current ability points> [<max ability points=%[4]s>]\n" +
-		"Once you tell me a max, it will be saved to your profile and " +
-		"you don't have to enter it again unless it changes.\n",
-		config.BotPrefix, maxArenaEnergy, maxEnergy, maxAbility)
-
 	if m.Author.ID == BorkID || (config.BotChannel != "" && m.ChannelID != config.BotChannel) ||
 		!strings.HasPrefix(m.Content, config.BotPrefix) {
 		return
 	}
-	fmt.Printf(">> %s\n", m.ContentWithMentionsReplaced())
 
 	f := strings.Split(m.Content[1:len(m.Content)], " ")
+
+	if !strings.HasPrefix("arena", f[0]) &&
+		!strings.HasPrefix("energy", f[0]) &&
+		!strings.HasPrefix("ability", f[0]) {
+		return
+	}
 
 	if userSchedule, ok = schedule[m.Author.ID]; !ok {
 		schedule[m.Author.ID] = make(map[string]scheduleItem)
 	}
 
 	if len(f) < 2 || len(f) > 3 {
-		s.ChannelMessageSend(m.ChannelID, helpMessage )
+		sendHelpMessage(s)
 		return
 	}
 
 	e, err = strconv.Atoi(f[1])
 	if err != nil{
-		s.ChannelMessageSend(m.ChannelID, helpMessage)
+		sendHelpMessage(s)
 		return
 	}
 
 	if len(f) == 3 {
 		newMax, err = strconv.Atoi(f[2])
 		if err != nil {
-			s.ChannelMessageSend(m.ChannelID, helpMessage)
+			sendHelpMessage(s)
 			return
 		}
 	}
