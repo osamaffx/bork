@@ -29,8 +29,6 @@ func Start() {
 	timersSetup(goBot)
 	goBot.AddHandler(timerHandler)
 
-	goBot.AddHandler(helpHandler)
-
 	err = goBot.Open()
 	if err != nil {
 		fmt.Println(err.Error())
