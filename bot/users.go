@@ -12,10 +12,12 @@ import (
 // userInfo contains information on the players
 // values in a map[string]userInfo where the key is the Discord ID
 type userInfo struct {
-	TimeZone   string `json:"tz"`          // Time zone for user for reporting times
-	MaxEnergy  int    `json:"max_energy"`  // Max energy of user (i.e. 174 for lvl 80)
-	MaxAbility int    `json:"max_ability"` // Max ability points of user (default 12)
-	Uses       int    `json:"Uses"`        // Number of times user has called Bork
+	TimeZone      string `json:"tz"`             // Time zone for user for reporting times
+	MaxEnergy     int    `json:"max_energy"`     // Max energy of user (i.e. 174 for lvl 80)
+	MaxAbility    int    `json:"max_ability"`    // Max ability points of user (default 12)
+	MaxDominance  int    `json:"max_dominance"`  // Hourly rate at which dominance builds
+	DominanceRate int    `json:"dominance_rate"` // Hourly rate at which dominance builds
+	Uses          int    `json:"Uses"`           // Number of times user has called Bork
 }
 
 var users map[string]userInfo
@@ -41,7 +43,7 @@ func profileHandler(s *discordgo.Session, m *discordgo.MessageCreate) {
 	}
 
 	if profile, ok = users[m.Author.ID]; !ok {
-		profile = userInfo{"-5", 144, 12, 0}
+		profile = userInfo{"-5", maxEnergy, maxAbility, maxDominance, dominanceRate, 0}
 	}
 	profile.Uses += 1
 
@@ -82,6 +84,30 @@ func profileHandler(s *discordgo.Session, m *discordgo.MessageCreate) {
 			}
 			profile.MaxAbility = v
 			i += 2
+		} else if strings.HasPrefix("dominance", f[i]) {
+			if len(f) <= i+1{
+				sendHelpMessage(s)
+				return
+			}
+			v, err = strconv.Atoi(f[i+1])
+			if err != nil{
+				sendHelpMessage(s)
+				return
+			}
+			profile.MaxDominance = v
+			i += 2
+		} else if strings.HasPrefix("rate", f[i]) {
+			if len(f) <= i+1{
+				sendHelpMessage(s)
+				return
+			}
+			v, err = strconv.Atoi(f[i+1])
+			if err != nil{
+				sendHelpMessage(s)
+				return
+			}
+			profile.DominanceRate = v
+			i += 2
 		} else {
 			/*
 			_, err := time.LoadLocation(f[i])
@@ -96,8 +122,8 @@ func profileHandler(s *discordgo.Session, m *discordgo.MessageCreate) {
 	}
 
 	s.ChannelMessageSend(m.ChannelID,
-		fmt.Sprintf("Here's your new info, %s: time zone is %s, max energy is %d, max ability points is %d\n",
-			m.Author.Mention(), profile.TimeZone, profile.MaxEnergy, profile.MaxAbility))
+		fmt.Sprintf("Here's your new info, %s: time zone is %s, max energy is %d, max ability points is %d, max dominance is %d, dominance rate is %d\n",
+			m.Author.Mention(), profile.TimeZone, profile.MaxEnergy, profile.MaxAbility, profile.MaxDominance, profile.DominanceRate))
 
 	users[m.Author.ID] = profile
 	saveUsers("./data/users.json")

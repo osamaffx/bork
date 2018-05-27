@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"github.com/westphae/bork/config"
 	"github.com/bwmarrin/discordgo"
-	"strings"
 )
 
 func sendHelpMessage(s *discordgo.Session) (err error) {
@@ -47,31 +46,5 @@ Examples:
 		config.BotPrefix, maxArenaEnergy, maxEnergy, maxAbility)
 
 	_, err = s.ChannelMessageSend(config.BotChannel, helpMessage)
-	return
-}
-
-func helpHandler(s *discordgo.Session, m *discordgo.MessageCreate) {
-	var (
-		profile     userInfo
-		ok          bool
-	)
-
-	if m.Author.ID == BorkID || (config.BotChannel != "" && m.ChannelID != config.BotChannel) ||
-		!strings.HasPrefix(m.Content, config.BotPrefix) {
-		return
-	}
-
-	if profile, ok = users[m.Author.ID]; !ok {
-		profile = userInfo{"-5", 144, 12, 0}
-	}
-	profile.Uses += 1
-
-	f := strings.Split(m.Content[1:len(m.Content)], " ")
-
-	if !strings.HasPrefix("help", f[0]) {
-		return
-	}
-
-	sendHelpMessage(s)
 	return
 }

@@ -24,6 +24,8 @@ const (
 	abilityRate     = 5 * 60 // Ability points refresh one point per 5 minutes = 300 seconds
 	timeRate        = 60 // Generic convention is time in minutes = 60 seconds
 	maxAbility      = 12
+	maxDominance    = 20000
+	dominanceRate   = 3600 / 400 // Dominance typical refresh is 400/hr
 )
 
 var (
@@ -65,21 +67,21 @@ func timersSetup(s *discordgo.Session) {
 func timerHandler(s *discordgo.Session, m *discordgo.MessageCreate) {
 
 	var (
-		profile      userInfo
-		userSchedule map[string]scheduleItem
-		c            chan struct{}
-		d            time.Duration
-		e            int
-		ok           bool
-		err          error
-		sType, msg   string
-		rate         int
-		max, newMax  int
-		offset       int
+		profile       userInfo
+		userSchedule  map[string]scheduleItem
+		c             chan struct{}
+		d             time.Duration
+		e             int
+		ok            bool
+		err           error
+		sType, msg    string
+		rate, newRate int
+		max, newMax   int
+		offset        int
 	)
 
 	if profile, ok = users[m.Author.ID]; !ok {
-		profile = userInfo{"GMT", maxEnergy, maxAbility, 0}
+		profile = userInfo{"GMT", maxEnergy, maxAbility, maxDominance, dominanceRate, 0}
 	}
 	profile.Uses += 1
 
@@ -100,7 +102,7 @@ func timerHandler(s *discordgo.Session, m *discordgo.MessageCreate) {
 		msg = fmt.Sprintf("you have full %s", sType)
 		rate = arenaEnergyRate
 		offset = 60
-		if e, newMax, err = parseCurMax(f[1]); err != nil {
+		if e, newMax, _, err = parseCurMaxRate(f[1]); err != nil {
 			log.Print(err)
 			sendHelpMessage(s)
 			return
@@ -115,7 +117,7 @@ func timerHandler(s *discordgo.Session, m *discordgo.MessageCreate) {
 		msg = fmt.Sprintf("you have full %s", sType)
 		rate = energyRate
 		offset = 60
-		if e, newMax, err = parseCurMax(f[1]); err != nil {
+		if e, newMax, _, err = parseCurMaxRate(f[1]); err != nil {
 			log.Print(err)
 			sendHelpMessage(s)
 			return
@@ -129,7 +131,7 @@ func timerHandler(s *discordgo.Session, m *discordgo.MessageCreate) {
 		msg = fmt.Sprintf("you have full %s", sType)
 		rate = abilityRate
 		offset = 60
-		if e, newMax, err = parseCurMax(f[1]); err != nil {
+		if e, newMax, _, err = parseCurMaxRate(f[1]); err != nil {
 			log.Print(err)
 			sendHelpMessage(s)
 			return
@@ -138,6 +140,23 @@ func timerHandler(s *discordgo.Session, m *discordgo.MessageCreate) {
 			profile.MaxAbility = newMax
 		}
 		max = profile.MaxAbility
+	case strings.HasPrefix("dominance", f[0]) && len(f)>1:
+		sType = "dominance"
+		msg = fmt.Sprintf("you have full %s", sType)
+		offset = 60
+		if e, newMax, newRate, err = parseCurMaxRate(f[1]); err != nil {
+			log.Print(err)
+			sendHelpMessage(s)
+			return
+		}
+		if newRate > 0 {
+			profile.DominanceRate = newRate
+		}
+		rate = 3600 / profile.DominanceRate
+		if newMax > 0 {
+			profile.MaxDominance = newMax
+		}
+		max = profile.MaxDominance
 	case strings.HasPrefix("time", f[0]) && len(f)>1:
 		rate = timeRate
 		offset = 0
@@ -180,23 +199,29 @@ func timerHandler(s *discordgo.Session, m *discordgo.MessageCreate) {
 	saveSchedule("./data/schedule.json")
 }
 
-// parseCurMax returns an int of current value and max value given an input string.
-func parseCurMax(input string) (cur int, max int, err error) {
+// parseCurMaxRate returns an int of current value and max value given an input string.
+func parseCurMaxRate(input string) (cur int, max int, rate int, err error) {
 	f := strings.Split(input, " ")
 
 	cur, err = strconv.Atoi(f[0])
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, 0, err
 	}
 
-	if len(f) == 2 {
+	if len(f) >= 2 {
 		max, err = strconv.Atoi(f[1])
 		if err != nil {
-			return 0, 0, err
+			return 0, 0, 0, err
 		}
 	}
 
-	return cur, max, nil
+	if len(f) == 3 {
+		rate, err = strconv.Atoi(f[1])
+		if err != nil {
+			return 0, 0, 0, err
+		}
+	}
+	return cur, max, rate, nil
 }
 
 // parseTime returns an int of minutes and a message given a string like "h:mm mes sage".
